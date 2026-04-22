@@ -1,0 +1,84 @@
+# config/env_config.yaml
+# =======================
+# Layer 2 — RL Market Environment Configuration
+#
+# v2 changes
+# ----------
+# circuit_breaker halt_threshold_pct : 7.0 → 15.0
+#   GAN sequences have 8-13% single-tick moves from price variance.
+#   At 7.0% the circuit breaker fires on normal data, not real shocks.
+#   15% reserves it for genuine extreme events only.
+#
+# shock_probability : 0.002 → 0.001
+#   With GAN sequences already providing realistic price paths,
+#   random shock injection can be rarer. Dashboard shock buttons
+#   still work on demand at any time.
+#
+# impact_lambda : 0.005 → 0.003
+#   Reduces price impact per order. At 0.005 with 100 agents the
+#   cumulative impact was pushing prices too far from the GAN series.
+#
+# spread_bps : 10 → 15
+#   SPY real spread is ~1-2 bps but our synthetic prices are in the
+#   $300-400 range. 15 bps gives realistic order book depth without
+#   agents crossing the spread on every tick.
+#
+# transaction_cost_bps : 0 → 2
+#   Zero cost allows infinite churn. 2 bps is realistic for retail
+#   and prevents momentum agents from over-trading on tiny signals.
+
+# --- Market initialisation ---
+initial_price: 100.0          # overridden at runtime by GAN sequence start price
+tick_limit: 1000              # max simulation ticks per episode
+min_price: 1.0                # price floor
+price_decimals: 2
+
+# --- Order book ---
+max_book_depth: 20
+tick_size: 0.01
+lot_size: 1
+max_order_qty: 500
+
+# --- Price impact model ---
+impact_model: "sqrt"          # "linear" | "sqrt" | "log" | "kyle"
+impact_lambda: 0.003          # FIX v2: 0.005 → 0.003. Reduces cumulative drift from 100 agents.
+decay_factor: 0.85            # per-tick impact decay (mean reversion)
+spread_bps: 15                # FIX v2: 10 → 15. Realistic for $300-400 price range.
+volatility_window: 20
+
+# --- Shock events ---
+shock_types:
+  flash_crash:
+    price_drop_pct_min: 5.0
+    price_drop_pct_max: 13.0
+    duration_ticks: 3
+    volume_spike: 5.0
+  liquidity_crisis:
+    spread_multiplier: 8.0
+    depth_reduction: 0.7
+    duration_ticks: 10
+  volatility_spike:
+    vol_multiplier: 4.0
+    duration_ticks: 5
+  circuit_breaker:
+    halt_threshold_pct: 15.0  # FIX v2: 7.0 → 15.0. Was firing on normal GAN price variance.
+    halt_duration_ticks: 2    # Reserve for genuine extreme events only.
+
+shock_probability: 0.001      # FIX v2: 0.002 → 0.001. GAN data already provides realistic paths.
+
+# --- Observation space ---
+price_history_len: 30
+include_order_book_features: true
+include_portfolio_features: true
+obs_normalise: true
+
+# --- Reward ---
+reward_type: "pnl"            # "pnl" | "pnl_sharpe" | "log_return"
+sharpe_window: 20
+transaction_cost_bps: 2       # FIX v2: 0 → 2. Prevents over-trading on tiny signals.
+holding_penalty: 0.0001
+
+# --- Episode ---
+use_gan_prices: true          # runner loads sequences from data/filtered/
+gan_regime: null              # null = random sequence per episode
+reset_portfolios_on_episode: true

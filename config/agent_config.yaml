@@ -1,0 +1,130 @@
+# config/agent_config.yaml
+# =========================
+# Layer 2 — Agent Policies Configuration
+#
+# FIX: Added per-agent heterogeneity range keys (_min/_max) for Value and
+# Momentum agents so each of the 30 agents in each group draws unique
+# parameters from a seeded RNG in __init__, preventing all agents in a
+# group from producing identical signals → identical PnL.
+#
+# Original structure and all existing keys are preserved unchanged.
+# New keys are marked with # [NEW]
+
+# --- Pool composition ---
+pool:
+  total_agents: 100
+  momentum:
+    count: 30
+    color: "#3B82F6"   # blue
+  value:
+    count: 30
+    color: "#10B981"   # green
+  noise:
+    count: 20
+    color: "#F59E0B"   # amber
+  panic:
+    count: 20
+    color: "#EF4444"   # red
+
+# --- Base agent ---
+base:
+  initial_cash: 10000.0        # USD
+  max_position: 1000           # max shares held (long or short)
+  max_order_size: 500          # max single order shares
+  allow_short: false           # short selling enabled
+  commission_bps: 5            # transaction cost
+  stop_loss_pct: 0.10          # forced sell if drawdown exceeds this fraction
+  qty_small: 10                # shares per SMALL order
+  qty_large: 50                # shares per LARGE order
+
+# --- Momentum agent (PPO) ---
+momentum:
+  algorithm: "PPO"
+  policy_net: [256, 256]       # MLP hidden layers
+  lr: 3.0e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  n_steps: 128
+  n_epochs: 10
+  batch_size: 64
+
+  # Strategy params (base/reference values — agents sample around these)
+  fast_ma: 5                   # fast EMA period
+  slow_ma: 20                  # slow EMA period
+  signal_threshold: 0.002      # min signal magnitude to act
+  trend_strength_weight: 0.6   # how much to weight trend vs mean-rev
+
+  # Per-agent heterogeneity ranges [NEW]
+  # Each MomentumAgent draws its actual parameters uniformly from these ranges
+  # using a seed derived from its agent_id, so parameters are stable across
+  # runs but unique per agent. This prevents all 30 agents producing the
+  # same signal and therefore the same PnL.
+  fast_ma_min: 3               # [NEW] shortest fast EMA (hair-trigger agents)
+  fast_ma_max: 10              # [NEW] longest fast EMA (slower-reacting agents)
+  slow_ma_min: 15              # [NEW] shortest slow EMA
+  slow_ma_max: 40              # [NEW] longest slow EMA
+  signal_threshold_min: 0.001  # [NEW] most sensitive agents act on tiny signals
+  signal_threshold_max: 0.008  # [NEW] least sensitive agents require strong moves
+  trend_weight_min: 0.35       # [NEW] agents that blend in more mean-reversion
+  trend_weight_max: 0.90       # [NEW] pure trend-followers
+
+# --- Value agent (DQN) ---
+value:
+  algorithm: "DQN"
+  q_net: [256, 256]
+  lr: 1.0e-4
+  gamma: 0.99
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay: 0.995
+  replay_buffer_size: 50000
+  batch_size: 128
+  target_update_freq: 100
+
+  # Strategy params (base/reference values — agents sample around these)
+  fair_value_window: 50        # rolling mean for fair-value estimate
+  buy_threshold: -0.03         # buy when price < fair_value * (1 - threshold)
+  sell_threshold: 0.05         # sell when price > fair_value * (1 + threshold)
+  mean_reversion_weight: 0.7
+
+  # Per-agent heterogeneity ranges [NEW]
+  # Each ValueAgent draws its actual parameters from these ranges using a
+  # seed derived from its agent_id. Previously all 30 Value agents shared
+  # identical parameters → identical signal → identical PnL (all -$661).
+  fair_value_window_min: 20    # [NEW] short-memory agents (react to recent prices)
+  fair_value_window_max: 80    # [NEW] long-memory agents (stable fair-value estimate)
+  buy_threshold_min: -0.06     # [NEW] aggressive dip-buyers (buy on small dips)
+  buy_threshold_max: -0.015    # [NEW] patient buyers (wait for deep dips)
+  sell_threshold_min: 0.02     # [NEW] eager profit-takers
+  sell_threshold_max: 0.10     # [NEW] patient holders (wait for large overvaluation)
+  mr_weight_min: 0.40          # [NEW] agents with more contrarian overlay
+  mr_weight_max: 0.90          # [NEW] pure mean-reversion agents
+
+# --- Noise agent (random) ---
+noise:
+  order_frequency: 0.4         # probability of placing an order each tick
+  qty_min: 1
+  qty_max: 50
+  side_bias: 0.5               # 0.5 = unbiased; >0.5 = buy-biased
+  price_offset_std: 0.5        # std of price offset from mid (in ticks)
+
+# --- Panic agent ---
+panic:
+  trigger_drop_pct: 3.0        # activate if price drops >3% in window
+  trigger_window: 5            # ticks to look back for trigger
+  sell_fraction: 0.5           # fraction of holdings to dump per tick
+  cascade_factor: 1.5          # sell multiplier when neighbouring panic agents fire
+  recovery_threshold: 1.0      # % recovery before deactivating panic mode
+  panic_cooldown: 10           # ticks before panic can re-trigger
+
+# --- RL training ---
+training:
+  total_timesteps: 500000
+  eval_freq: 10000
+  save_freq: 50000
+  policy_dir: "models/rl_policies"
+  log_dir: "data/logs/rl"
+  device: "auto"               # "cpu" | "cuda" | "auto"
